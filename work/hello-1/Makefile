@@ -1,9 +1,9 @@
-KDIR=../../build/kvm/
+KDIR=/local/patrickfrank.tchossiewedjengoue.etu/build/kvm/
 
-obj-m += hello-1.o 
-PWD := $(CURDIR) 
+obj-m += asee_mod.o
+PWD := $(CURDIR)
 
-all: 
-	make -C $(KDIR) M=$(PWD) modules 
-clean: 
+all:
+	make -C $(KDIR) M=$(PWD) modules
+clean:
 	make -C $(KDIR) M=$(PWD) clean

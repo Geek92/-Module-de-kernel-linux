@@ -1,0 +1,23 @@
+
+     /* Check for valid buffer size
+     if (length > BUF_LEN)
+         return -EINVAL;
+     */
+
+     /* on copie les characteres envoyés dans le buffer circulaire */
+     /*while (length > 0) {
+
+         //on utilise la fonction get_user pour copier le caractere du segment de données utilisateur
+        // vers le segment de données du kernel
+         get_user(c, msg)
+         buffer[cursor] = c;
+         length--;
+         cursor++;
+         bytes_written++;
+
+         //si le curseur arrive a la fin de mon buffer on le repositione au debut
+         if (cursor == BUF_LEN - 1) {
+             cursor = 0;
+         }
+     }*/
+      /* on copie les characteres envoyés dans le buffer circulaire */
