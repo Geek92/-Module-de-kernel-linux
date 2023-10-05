@@ -145,28 +145,7 @@ static int device_release(struct inode *inode, struct file *file)
    return bytes_written;
  }
 
-//cette fonction est applelée quand on veut lire les valeurs présentes sur le device
-/*static ssize_t device_read(struct file *filp,
-                           char __user *message,
-                           size_t length,
-                           loff_t *offset)
-{
-    // nombre de bytes lus
-    int bytes_read = 0;
-    // on lit les valeurs contenues dans le buffer et on les envoie vers le terminal
-    for(int i = 0; i < length; i++){
-          put_user(buffer[read], message + i);
-          bytes_read++;
-          read++;
-    }
-    read = 0;
-    //on vide le buffer apres chaque lecture
-    for(int i = 0; i < BUF_LEN; i++){
-       buffer[i] =  '\0';
-    }
-    // le nombre total de byte lus
-    return bytes_read;
-}*/
+
 static ssize_t device_read(struct file *filp, /* see include/linux/fs.h   */
                            char __user *buffer, /* buffer to fill with data */
                            size_t length, /* length of the buffer     */
@@ -174,51 +153,24 @@ static ssize_t device_read(struct file *filp, /* see include/linux/fs.h   */
 {
   /* Nombre d'octets réellement lus dans le tampon */
   int bytes_read = 0;
-
-  /* Position actuelle de lecture dans le tampon circulaire */
-  //static int read_position = 0;
-
-  /* Utiliser un mutex pour éviter les conflits d'accès concurrents si nécessaire */
-
-  /* Boucle pour lire les données du tampon circulaire */
-  while (length > 0) {
-      char data;
-
-      /* Lire un octet du tampon circulaire à la position actuelle */
-      data = message[read];
-
-      /* Si nous avons atteint la fin du message (null terminator), sortir de la boucle */
-      if (data == '\0') {
-          break;
-      }
-
-      /* Copier l'octet lu dans le tampon utilisateur */
-      if (put_user(data, buffer) != 0) {
+  //si la tete de lecture est a 0 on lit les caracteres ecrits
+if(lecture == 0 && ecriture > 0){
+    for(int i = 0; i < ecriture; i++){
+      if (put_user(message[i], buffer+i) != 0) {
           /* Gestion de l'erreur de copie vers l'utilisateur si nécessaire */
           return -EFAULT;
       }
-
-      /* Mettre à jour les compteurs et les positions */
-      length--;
-      buffer++;
       bytes_read++;
-      read++;
-
-      /* Si nous atteignons la fin du tampon circulaire, revenir au début */
-      if (read == BUF_LEN) {
-          read = 0;
+}
+} else if(lecture == 0 && ecriture == 0){
+    for(int i = 0; i < BUF_LEN; i++){
+      if (put_user(message[i], buffer+i) != 0) {
+          /* Gestion de l'erreur de copie vers l'utilisateur si nécessaire */
+          return -EFAULT;
       }
+      bytes_read++;
   }
-
-  /* Si nous avons lu au moins un octet, réinitialiser le décalage à zéro */
-  if (bytes_read > 0) {
-      *offset = 0;
-  }
-  if (message[read] == '\0') {
-       memset(message, 0, sizeof(message));
-       read = 0;
-   }
-
+}
   return bytes_read;
 }
 
