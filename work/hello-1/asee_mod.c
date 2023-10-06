@@ -33,8 +33,9 @@ static ssize_t device_write(struct file *, const char __user *, size_t,
 /* Global variables are declared as static, so are global within the file. */
 
 static int major; /* major number assigned to our device driver */
-static int read = 0; //tete de lecture
-static int write = 0; //tete d'ecriture
+static char circular_buffer[BUF_LEN];
+static int write_index = 0;
+static int read_index = 0;
 
 enum {
     CDEV_NOT_USED = 0,
@@ -44,7 +45,7 @@ enum {
 /* Is device open? Used to prevent multiple access to device */
 static atomic_t already_open = ATOMIC_INIT(CDEV_NOT_USED);
 
-static char message[BUF_LEN]; /*the circular buffer*/
+//static char message[BUF_LEN]; /*the circular buffer*/
 
 static struct class *cls;
 
@@ -87,6 +88,12 @@ static void __exit chardev_exit(void)
     unregister_chrdev(major, DEVICE_NAME);
 }
 
+//vider le buffer
+void emptybuffer(char *buffer, int buffer_length){
+   for(int i = 0; i < buffer_length; i++){
+       *buffer++ = '\0';
+   }
+}
 /* Methods */
 
 /* Called when a process tries to open the device file, like
@@ -122,57 +129,42 @@ static int device_release(struct inode *inode, struct file *file)
 /* cette fonction est appelée losqu'on effectue la commande echo au niveau du terminal
  * read from it.
  */
- static ssize_t device_write(struct file *filp,
-                            const char __user *buffer,
-                            size_t length,
-                            loff_t *offset)
+ static ssize_t device_write(struct file *filp, const char __user *buff, size_t len, loff_t *off)
  {
-     //nombre de bytes copiés dans le buffer circulaire
      int bytes_written = 0;
-     for(int i = 0; i < length; i++){
-          get_user(message[write], buffer + i);
-          bytes_written++;
-          write++;
-          //si on a ecris le seizieme charactere, on remets la tete d'ecriture a la position initiale
-          if(write == BUF_LEN){
-              write = 0;
-          }
-    }
-    // si on a ecris plus de 16 characters on deplace la tete de lecture sur le successeur du dernier charactere ecris
-    if(bytes_written > BUF_LEN){
-            read = write;
-   }
-   return bytes_written;
+
+     while (len && ((write_index + 1) % BUF_LEN) != read_index) {
+         get_user(circular_buffer[write_index], buff);
+         write_index = (write_index + 1) % BUF_LEN;
+         buff++;
+         len--;
+         bytes_written++;
+     }
+
+     return bytes_written;
+     //bytes_written;
  }
 
 
-static ssize_t device_read(struct file *filp, /* see include/linux/fs.h   */
-                           char __user *buffer, /* buffer to fill with data */
-                           size_t length, /* length of the buffer     */
-                           loff_t *offset)
-{
-  /* Nombre d'octets réellement lus dans le tampon */
-  int bytes_read = 0;
-  //si la tete de lecture est a 0 on lit les caracteres ecrits
-if(lecture == 0 && ecriture > 0){
-    for(int i = 0; i < ecriture; i++){
-      if (put_user(message[i], buffer+i) != 0) {
-          /* Gestion de l'erreur de copie vers l'utilisateur si nécessaire */
-          return -EFAULT;
-      }
-      bytes_read++;
-}
-} else if(lecture == 0 && ecriture == 0){
-    for(int i = 0; i < BUF_LEN; i++){
-      if (put_user(message[i], buffer+i) != 0) {
-          /* Gestion de l'erreur de copie vers l'utilisateur si nécessaire */
-          return -EFAULT;
-      }
-      bytes_read++;
-  }
-}
-  return bytes_read;
-}
+ static ssize_t device_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset)
+ {
+     int bytes_read = 0;
+
+     while (length && read_index != write_index) {
+         put_user(circular_buffer[read_index], buffer);
+         read_index = (read_index + 1) % BUF_LEN;
+         buffer++;
+         length--;
+         bytes_read++;
+     }
+//on reinitialise le buffer apres la lecture
+     if (read_index == write_index) {
+     read_index = 0;
+     memset(circular_buffer, 0, sizeof(circular_buffer));
+ }
+
+     return bytes_read;
+ }
 
 
 module_init(chardev_init);

@@ -44,6 +44,7 @@ __used __section("__versions") = {
 	{ 0x35d69542, "device_destroy" },
 	{ 0x144eaffa, "class_destroy" },
 	{ 0x6bc3fbc0, "__unregister_chrdev" },
+	{ 0xfb578fc5, "memset" },
 	{ 0xbdfb6dbb, "__fentry__" },
 	{ 0x167e7f9d, "__get_user_1" },
 	{ 0x5b8239ca, "__x86_return_thunk" },
@@ -55,4 +56,4 @@ __used __section("__versions") = {
 MODULE_INFO(depends, "");
 
 
-MODULE_INFO(srcversion, "44FC019D02E1D708622E6B8");
+MODULE_INFO(srcversion, "0C541D38BD8F8E98DDBF34F");
