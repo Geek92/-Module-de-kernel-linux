@@ -28,6 +28,7 @@ static ssize_t device_write(struct file *, const char __user *, size_t,
 #define SUCCESS 0
 #define DEVICE_NAME "asee_mod" /* Dev name as it appears in /proc/devices   */
 #define BUF_LEN 16 /* Max length of the message from the device */
+#define DEFALUT_VAL 1 /* Max length of the message from the device */
 
 
 /* Global variables are declared as static, so are global within the file. */
@@ -36,6 +37,11 @@ static int major; /* major number assigned to our device driver */
 static char circular_buffer[BUF_LEN];
 static int write_index = 0;
 static int read_index = 0;
+static int byte_written = 0;
+//static int count = 0;
+//static int asee_buf_size = BUF_LEN;
+//static int asee_buf_count = 0;
+
 
 enum {
     CDEV_NOT_USED = 0,
@@ -89,7 +95,7 @@ static void __exit chardev_exit(void)
 }
 
 //vider le buffer
-void emptybuffer(char *buffer, int buffer_length){
+static void emptybuffer(char *buffer, int buffer_length){
    for(int i = 0; i < buffer_length; i++){
        *buffer++ = '\0';
    }
@@ -129,41 +135,41 @@ static int device_release(struct inode *inode, struct file *file)
 /* cette fonction est appelée losqu'on effectue la commande echo au niveau du terminal
  * read from it.
  */
- static ssize_t device_write(struct file *filp, const char __user *buff, size_t len, loff_t *off)
- {
-     int bytes_written = 0;
+ //emptybuffer(circular_buffer,BUF_LEN);
 
-     while (len && ((write_index + 1) % BUF_LEN) != read_index) {
-         get_user(circular_buffer[write_index], buff);
-         write_index = (write_index + 1) % BUF_LEN;
-         buff++;
-         len--;
-         bytes_written++;
-     }
-
-     return bytes_written;
-     //bytes_written;
- }
-
-
- static ssize_t device_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset)
- {
+ static ssize_t device_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
      int bytes_read = 0;
+     int end = byte_written;
+     char *msg_ptr = circular_buffer;
 
-     while (length && read_index != write_index) {
-         put_user(circular_buffer[read_index], buffer);
-         read_index = (read_index + 1) % BUF_LEN;
-         buffer++;
-         length--;
-         bytes_read++;
+     if (byte_written > BUF_LEN){
+          read_index = write_index;
+          end = byte_written - write_index;
+
      }
-//on reinitialise le buffer apres la lecture
-     if (read_index == write_index) {
+
+     while (length && end){
+           put_user(msg_ptr[read_index], buffer++);
+           read_index = (read_index + 1) % BUF_LEN;
+           bytes_read++;
+           length--;
+           end--;
+     }
+     byte_written = 0;
      read_index = 0;
-     memset(circular_buffer, 0, sizeof(circular_buffer));
+     write_index = 0;
+     emptybuffer(circular_buffer, BUF_LEN);
+     return bytes_read;
  }
 
-     return bytes_read;
+ static ssize_t device_write(struct file *filp, const char __user *buff, size_t len, loff_t *off) {
+     char *msg_ptr = circular_buffer;
+     for(int i = 0; i < len -1; i++){
+           get_user(msg_ptr[write_index], buff++);
+           byte_written++;
+           write_index = (write_index + 1) % BUF_LEN;
+     }
+     return byte_written > 0 ? byte_written : -1;
  }
 
 

@@ -3,7 +3,9 @@ ssh -p 10022 asee@localhost
 scp -P 10022 asee_mod.ko asee@localhost:
 
 ssh -p 10022 asee@localhost
+
 asee@debian$ sudo su
+
 root@debian:/home/asee# insmod hello-1.ko
 
 echo "Hello world" > /dev/asee_mod
@@ -13,20 +15,14 @@ cat /dev/asee_mod
 
 cat /dev/asee_mod
 
-echo "abcdefghijklmnopq" > /dev/asee_mod
+echo "abcdefghijklmnopqr" > /dev/asee_mod
+
 cat /dev/asee_mod
 
 journalctl | tail -n 5
 
-
-
-
-
-scp -P 10022 hello.ko asee@localhost:
-echo "Hello world" > /dev/asee_mod
-
-scp -P 10022 hello-sysfs.ko asee@localhost:
-
 cat /sys/kernel/mymodule/asee_buf_size
 
-echo "32" > /sys/kernel/mymodule/asee_buf_size
+echo "9" > /sys/kernel/mymodule/asee_buf_size
+
+cat /sys/kernel/mymodule/asee_buf_count
