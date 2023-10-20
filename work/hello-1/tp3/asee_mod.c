@@ -18,8 +18,9 @@
 #include <linux/kobject.h>
 #include <linux/string.h>
 #include <linux/sysfs.h>
-
 #include <asm/errno.h>
+#include <linux/wait.h> /* For putting processes to sleep and
+                                   waking them up */
 
 /*  Prototypes - this would normally go in a .h file */
 static int device_open(struct inode *, struct file *);
@@ -42,6 +43,8 @@ static int write_index = 0;
 static int read_index = 0;
 static int asee_buf_size = BUF_LEN;
 static int asee_buf_count = 0;
+/* Queue of processes who want our file */
+static DECLARE_WAIT_QUEUE_HEAD(waitq);
 //static char *msg_ptr;
 //static int count = 0;
 //static int byte_written = 0;
@@ -194,8 +197,8 @@ static int device_open(struct inode *inode, struct file *file)
 {
     //static int counter = 0;
 
-    if (atomic_cmpxchg(&already_open, CDEV_NOT_USED, CDEV_EXCLUSIVE_OPEN))
-        return -EBUSY;
+    //if (atomic_cmpxchg(&already_open, CDEV_NOT_USED, CDEV_EXCLUSIVE_OPEN))
+        //return -EBUSY;
 
     //sprintf(msg, "I already told you %d times Hello world!\n", counter++);
     try_module_get(THIS_MODULE);
@@ -223,39 +226,47 @@ static int device_release(struct inode *inode, struct file *file)
  //emptybuffer(circular_buffer,BUF_LEN);
 
  static ssize_t device_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
+
+     if(asee_buf_count == 0)
+        wait_event_interruptible(waitq, asee_buf_count > 0);
      int bytes_read = 0;
      int end = asee_buf_count;
      char *msg_ptr = circular_buffer;
 
-     if (asee_buf_count > asee_buf_size){
-          read_index = write_index;
-          end = asee_buf_count - write_index;
-
-     }
-
      while (length && end){
            put_user(msg_ptr[read_index], buffer++);
-           read_index = (read_index + 1) % asee_buf_size;
+           read_index++;
            bytes_read++;
            length--;
            end--;
      }
-     emptybuffer(circular_buffer, asee_buf_size);
+     //emptybuffer(circular_buffer, asee_buf_size);
      asee_buf_count = 0;
      read_index = 0;
      write_index = 0;
+     //apres la lecture j'appeles la fonction wake_up pour permettre aux process presents dans
+     //la waiting Queue de puovoir lire les donnés presentes dans le buffer
+     wake_up(&waitq);
      return bytes_read;
  }
 
  static ssize_t device_write(struct file *filp, const char __user *buff, size_t len, loff_t *off) {
-     //int byte_written = 0;
+
+     //wait_event_interruptible(waitq, asee_buf_size > asee_buf_count);
+     if( asee_buf_size == asee_buf_count)
+          wait_event_interruptible(waitq, asee_buf_size > asee_buf_count);
      char *msg_ptr = circular_buffer;
      for(int i = 0; i < len -1; i++){
            get_user(msg_ptr[write_index], buff++);
            asee_buf_count++;
-           write_index = (write_index + 1) % asee_buf_size;
+           wake_up(&waitq);
+           write_index++;
+           if( asee_buf_size == asee_buf_count)
+                wait_event_interruptible(waitq, asee_buf_size > asee_buf_count);
      }
-     //asee_buf_count+= byte_written;
+     //apres avoir ecris dans le buffer on appele la fonction wake_up de telles sorte que
+     // les process presents dans la waiting Queue puissent lire les donnés dans le buffer
+     //wake_up(&waitq);
      return asee_buf_count;
  }
 

@@ -1,6 +1,6 @@
 KDIR=/local/patrickfrank.tchossiewedjengoue.etu/build/kvm/
 
-obj-m += sleep.o
+obj-m += asee_mod.o
 PWD := $(CURDIR)
 
 all:
