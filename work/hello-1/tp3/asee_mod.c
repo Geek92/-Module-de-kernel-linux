@@ -28,6 +28,8 @@ static int device_release(struct inode *, struct file *);
 static ssize_t device_read(struct file *, char __user *, size_t, loff_t *);
 static ssize_t device_write(struct file *, const char __user *, size_t,
                             loff_t *);
+static int controlCcheck(void);
+static void emptybuffer(char *buffer, int buffer_length);
 
 #define SUCCESS 0
 #define DEVICE_NAME "asee_mod" /* Dev name as it appears in /proc/devices   */
@@ -38,7 +40,7 @@ static ssize_t device_write(struct file *, const char __user *, size_t,
 /* Global variables are declared as static, so are global within the file. */
 
 static int major; /* major number assigned to our device driver */
-static char circular_buffer[BUF_LEN];
+static char *circular_buffer;
 static int write_index = 0;
 static int read_index = 0;
 static int asee_buf_size = BUF_LEN;
@@ -49,7 +51,7 @@ static DECLARE_WAIT_QUEUE_HEAD(waitq);
 //static int count = 0;
 //static int byte_written = 0;
 static struct kobject *mymodule;
-char *buff_ptr = circular_buffer;
+//char *buff_ptr = circular_buffer;
 
 enum {
     CDEV_NOT_USED = 0,
@@ -95,12 +97,12 @@ static ssize_t asee_buf_size_store(struct kobject *kobj,
           }
     }else{
             asee_buf_size = new_buffer_size;
-            char  new_circular_buffer [new_buffer_size];
+            char  *new_circular_buffer = (char*)kmalloc(new_buffer_size * sizeof(char),GFP_KERNEL);
             for(int i = 0 ; i < asee_buf_count; i++){
                 new_circular_buffer[i] = circular_buffer[i];
-          };
-
-          *circular_buffer = &new_circular_buffer;
+            };
+            kfree(circular_buffer);
+            circular_buffer = new_circular_buffer;
 
     }
     return count;
@@ -190,11 +192,25 @@ static void emptybuffer(char *buffer, int buffer_length){
        *buffer++ = '\0';
    }
 }
+
+static int controlCcheck(){
+            int i, is_sig = 0; 
+
+            for (i = 0; i < _NSIG_WORDS && !is_sig; i++) 
+                is_sig = current->pending.signal.sig[i] & ~current->blocked.sig[i]; 
+            if (is_sig) {         
+                module_put(THIS_MODULE); 
+                return -EINTR; 
+            } 
+            return DEFALUT_VAL;
+} 
 /* Called when a process tries to open the device file, like
  * "sudo cat /dev/chardev"
  */
 static int device_open(struct inode *inode, struct file *file)
-{
+{    
+    // on initialise le buffer
+    circular_buffer = (char*)kmalloc(BUF_LEN * sizeof(char),GFP_KERNEL);
     //static int counter = 0;
 
     //if (atomic_cmpxchg(&already_open, CDEV_NOT_USED, CDEV_EXCLUSIVE_OPEN))
@@ -229,13 +245,14 @@ static int device_release(struct inode *inode, struct file *file)
 
      if(asee_buf_count == 0)
         wait_event_interruptible(waitq, asee_buf_count > 0);
+     controlCcheck();
      int bytes_read = 0;
      int end = asee_buf_count;
      char *msg_ptr = circular_buffer;
 
      while (length && end){
            put_user(msg_ptr[read_index], buffer++);
-           read_index++;
+           read_index = (read_index  + 1) % asee_buf_size;
            bytes_read++;
            length--;
            end--;
@@ -244,8 +261,6 @@ static int device_release(struct inode *inode, struct file *file)
      asee_buf_count = 0;
      read_index = 0;
      write_index = 0;
-     //apres la lecture j'appeles la fonction wake_up pour permettre aux process presents dans
-     //la waiting Queue de puovoir lire les donnés presentes dans le buffer
      wake_up(&waitq);
      return bytes_read;
  }
@@ -255,18 +270,18 @@ static int device_release(struct inode *inode, struct file *file)
      //wait_event_interruptible(waitq, asee_buf_size > asee_buf_count);
      if( asee_buf_size == asee_buf_count)
           wait_event_interruptible(waitq, asee_buf_size > asee_buf_count);
+     controlCcheck();
      char *msg_ptr = circular_buffer;
      for(int i = 0; i < len -1; i++){
            get_user(msg_ptr[write_index], buff++);
            asee_buf_count++;
            wake_up(&waitq);
-           write_index++;
+           write_index = (write_index  + 1) % asee_buf_size;
            if( asee_buf_size == asee_buf_count)
                 wait_event_interruptible(waitq, asee_buf_size > asee_buf_count);
+           controlCcheck();
      }
-     //apres avoir ecris dans le buffer on appele la fonction wake_up de telles sorte que
-     // les process presents dans la waiting Queue puissent lire les donnés dans le buffer
-     //wake_up(&waitq);
+
      return asee_buf_count;
  }
 
