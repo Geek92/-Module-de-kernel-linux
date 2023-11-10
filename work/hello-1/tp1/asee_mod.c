@@ -15,6 +15,7 @@
 #include <linux/types.h>
 #include <linux/uaccess.h> /* for get_user and put_user */
 #include <linux/version.h>
+#include  <linux/slab.h>
 
 #include <asm/errno.h>
 
@@ -34,13 +35,10 @@ static ssize_t device_write(struct file *, const char __user *, size_t,
 /* Global variables are declared as static, so are global within the file. */
 
 static int major; /* major number assigned to our device driver */
-static char circular_buffer[BUF_LEN];
+static char *circular_buffer = NULL;
 static int write_index = 0;
 static int read_index = 0;
 static int byte_written = 0;
-//static int count = 0;
-//static int asee_buf_size = BUF_LEN;
-//static int asee_buf_count = 0;
 
 
 enum {
@@ -82,11 +80,18 @@ static int __init chardev_init(void)
 
     pr_info("Device created on /dev/%s\n", DEVICE_NAME);
 
+// we initialize the circular buffer
+    circular_buffer = kmalloc(BUF_LEN*sizeof(char), GFP_KERNEL);
+    if(circular_buffer == NULL){
+        pr_info("error during buffer initialization");
+        return -ENOMEM;
+    }
     return SUCCESS;
 }
 
 static void __exit chardev_exit(void)
 {
+    kfree(circular_buffer);
     device_destroy(cls, MKDEV(major, 0));
     class_destroy(cls);
 
@@ -97,7 +102,7 @@ static void __exit chardev_exit(void)
 //vider le buffer
 static void emptybuffer(char *buffer, int buffer_length){
    for(int i = 0; i < buffer_length; i++){
-       *buffer++ = '\0';
+       buffer[i] = '\0';
    }
 }
 /* Methods */
@@ -121,6 +126,8 @@ static int device_open(struct inode *inode, struct file *file)
 /* Called when a process closes the device file. */
 static int device_release(struct inode *inode, struct file *file)
 {
+    //we free the memory occupied by the buffer
+    // kfree(circular_buffer);
     /* We're now ready for our next caller */
     atomic_set(&already_open, CDEV_NOT_USED);
 
@@ -140,21 +147,23 @@ static int device_release(struct inode *inode, struct file *file)
  static ssize_t device_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
      int bytes_read = 0;
      int end = byte_written;
-     char *msg_ptr = circular_buffer;
+     //char *msg_ptr = circular_buffer;
 
      if (byte_written > BUF_LEN){
           read_index = write_index;
           end = byte_written - write_index;
-
      }
 
      while (length && end){
-           put_user(msg_ptr[read_index], buffer++);
+           put_user(circular_buffer[read_index], buffer++);
+           pr_info("the output %c\n",circular_buffer[read_index]);
+           pr_info(" the adress %p\n",&circular_buffer[read_index]);
            read_index = (read_index + 1) % BUF_LEN;
            bytes_read++;
            length--;
            end--;
      }
+     //put_user('\0', buffer + 1);
      byte_written = 0;
      read_index = 0;
      write_index = 0;
@@ -162,14 +171,20 @@ static int device_release(struct inode *inode, struct file *file)
      return bytes_read;
  }
 
+ /*
+  * this function is used to write user input inside the circular buffer
+  */
  static ssize_t device_write(struct file *filp, const char __user *buff, size_t len, loff_t *off) {
-     char *msg_ptr = circular_buffer;
+     //char *msg_ptr = circular_buffer;
      for(int i = 0; i < len -1; i++){
-           get_user(msg_ptr[write_index], buff++);
+           get_user(circular_buffer[write_index], buff++);
+           pr_info("the user input %c\n",circular_buffer[write_index]);
+           pr_info(" the adress %p\n", &circular_buffer[write_index]);
            byte_written++;
            write_index = (write_index + 1) % BUF_LEN;
      }
-     return byte_written > 0 ? byte_written : -1;
+     //pr_info("the user input ",circular_buffer);
+     return byte_written > 0 ? byte_written : -EINVAL;
  }
 
 
