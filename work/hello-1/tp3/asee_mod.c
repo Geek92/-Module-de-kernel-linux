@@ -29,7 +29,7 @@ static ssize_t device_read(struct file *, char __user *, size_t, loff_t *);
 static ssize_t device_write(struct file *, const char __user *, size_t,
                             loff_t *);
 static int controlCcheck(void);
-static void emptybuffer(char *buffer, int buffer_length);
+//static void emptybuffer(char *buffer, int buffer_length);
 
 #define SUCCESS 0
 #define DEVICE_NAME "asee_mod" /* Dev name as it appears in /proc/devices   */
@@ -46,7 +46,9 @@ static int read_index = 0;
 static int asee_buf_size = BUF_LEN;
 static int asee_buf_count = 0;
 /* Queue of processes who want our file */
-static DECLARE_WAIT_QUEUE_HEAD(waitq);
+static DECLARE_WAIT_QUEUE_HEAD(read_waitq);
+static DECLARE_WAIT_QUEUE_HEAD(write_waitq);
+
 //static char *msg_ptr;
 //static int count = 0;
 //static int byte_written = 0;
@@ -133,6 +135,9 @@ static struct kobj_attribute asee_buf_count_attribute =
 
 static int __init chardev_init(void)
 {
+    //on initialise le buffer
+    circular_buffer = (char*)kmalloc(BUF_LEN * sizeof(char),GFP_KERNEL);
+
     major = register_chrdev(0, DEVICE_NAME, &chardev_fops);
 
     if (major < 0) {
@@ -147,9 +152,8 @@ static int __init chardev_init(void)
 #else
     cls = class_create(THIS_MODULE, DEVICE_NAME);
 #endif
-    device_create(cls, NULL, MKDEV(major, 0), NULL, DEVICE_NAME);
+    device_create(cls, NULL, MKDEV(major, 0), NULL, DEVICE_NAME);//vider le buffer
 
-    pr_info("Device created on /dev/%s\n", DEVICE_NAME);
 
     int error = 0;
 
@@ -174,6 +178,11 @@ static int __init chardev_init(void)
 
 static void __exit chardev_exit(void)
 {
+    //on libere le tampon circulaire
+    if(circular_buffer){
+           kfree(circular_buffer);
+           circular_buffer = NULL;
+    }
     device_destroy(cls, MKDEV(major, 0));
     class_destroy(cls);
 
@@ -186,31 +195,25 @@ static void __exit chardev_exit(void)
 
 /* Methods */
 
-//vider le buffer
-static void emptybuffer(char *buffer, int buffer_length){
+/*static void emptybuffer(char *buffer, int buffer_length){
    for(int i = 0; i < buffer_length; i++){
        *buffer++ = '\0';
    }
-}
+}*/
 
 static int controlCcheck(){
-            int i, is_sig = 0; 
+           int i = 0,is_sig = 0; 
 
             for (i = 0; i < _NSIG_WORDS && !is_sig; i++) 
                 is_sig = current->pending.signal.sig[i] & ~current->blocked.sig[i]; 
-            if (is_sig) {         
-                module_put(THIS_MODULE); 
-                return -EINTR; 
-            } 
-            return DEFALUT_VAL;
+            return is_sig;
 } 
 /* Called when a process tries to open the device file, like
  * "sudo cat /dev/chardev"
  */
 static int device_open(struct inode *inode, struct file *file)
 {    
-    // on initialise le buffer
-    circular_buffer = (char*)kmalloc(BUF_LEN * sizeof(char),GFP_KERNEL);
+ 
     //static int counter = 0;
 
     //if (atomic_cmpxchg(&already_open, CDEV_NOT_USED, CDEV_EXCLUSIVE_OPEN))
@@ -232,7 +235,6 @@ static int device_release(struct inode *inode, struct file *file)
      * never get rid of the module.
      */
     module_put(THIS_MODULE);
-
     return SUCCESS;
 }
 
@@ -242,10 +244,17 @@ static int device_release(struct inode *inode, struct file *file)
  //emptybuffer(circular_buffer,BUF_LEN);
 
  static ssize_t device_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
-
-     if(asee_buf_count == 0)
-        wait_event_interruptible(waitq, asee_buf_count > 0);
-     controlCcheck();
+    
+     
+    (wait_event_interruptible(read_waitq, asee_buf_count > 0));
+    int is_control_c = 0;
+    is_control_c = controlCcheck();
+    //si le processus en cours a été reveillé par un signal de control + c on l'interrompt
+    if(is_control_c){
+        module_put(THIS_MODULE); 
+            return -EINTR; 
+    }
+     
      int bytes_read = 0;
      int end = asee_buf_count;
      char *msg_ptr = circular_buffer;
@@ -261,27 +270,29 @@ static int device_release(struct inode *inode, struct file *file)
      asee_buf_count = 0;
      read_index = 0;
      write_index = 0;
-     wake_up(&waitq);
+     wake_up(&write_waitq);
      return bytes_read;
  }
 
  static ssize_t device_write(struct file *filp, const char __user *buff, size_t len, loff_t *off) {
 
-     //wait_event_interruptible(waitq, asee_buf_size > asee_buf_count);
-     if( asee_buf_size == asee_buf_count)
-          wait_event_interruptible(waitq, asee_buf_size > asee_buf_count);
-     controlCcheck();
+    
+    wait_event_interruptible(write_waitq, asee_buf_size > asee_buf_count);
+    int is_control_c = 0;
+    is_control_c = controlCcheck();
+    //si le processus en cours a été reveillé par un signal de control + c on l'interrompt
+    if(is_control_c){
+        module_put(THIS_MODULE); 
+            return -EINTR; 
+    }
+    
      char *msg_ptr = circular_buffer;
-     for(int i = 0; i < len -1; i++){
-           get_user(msg_ptr[write_index], buff++);
-           asee_buf_count++;
-           wake_up(&waitq);
-           write_index = (write_index  + 1) % asee_buf_size;
-           if( asee_buf_size == asee_buf_count)
-                wait_event_interruptible(waitq, asee_buf_size > asee_buf_count);
-           controlCcheck();
-     }
-
+    for(int i = 0; i < len -1; i++){
+        get_user(msg_ptr[write_index], buff++);
+        asee_buf_count++;
+        wake_up(&read_waitq);
+        write_index = (write_index  + 1) % asee_buf_size;
+    }
      return asee_buf_count;
  }
 
