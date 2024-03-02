@@ -128,7 +128,6 @@ static ssize_t asee_buf_count_store(struct kobject *kobj,
       return -1;
 }
 
-
 static struct kobj_attribute asee_buf_count_attribute =
   __ATTR(asee_buf_count, 0660, asee_buf_count_show, (void *)asee_buf_count_store);
 
@@ -137,7 +136,6 @@ static int __init chardev_init(void)
 {
     //on initialise le buffer
     circular_buffer = (char*)kmalloc(BUF_LEN * sizeof(char),GFP_KERNEL);
-
     major = register_chrdev(0, DEVICE_NAME, &chardev_fops);
 
     if (major < 0) {
@@ -153,7 +151,6 @@ static int __init chardev_init(void)
     cls = class_create(THIS_MODULE, DEVICE_NAME);
 #endif
     device_create(cls, NULL, MKDEV(major, 0), NULL, DEVICE_NAME);//vider le buffer
-
 
     int error = 0;
 
@@ -195,12 +192,10 @@ static void __exit chardev_exit(void)
 
 /* Methods */
 
-/*static void emptybuffer(char *buffer, int buffer_length){
-   for(int i = 0; i < buffer_length; i++){
-       *buffer++ = '\0';
-   }
-}*/
-
+/* 
+*cette fonction verifie si il y'a des signaux presents dans la 
+* dans la liste d'attente des signaux du process en cours
+*/
 static int controlCcheck(){
            int i = 0,is_sig = 0; 
 
@@ -239,12 +234,9 @@ static int device_release(struct inode *inode, struct file *file)
 }
 
 /* cette fonction est appelée losqu'on effectue la commande echo au niveau du terminal
- * read from it.
  */
- //emptybuffer(circular_buffer,BUF_LEN);
 
  static ssize_t device_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset) {
-    
      
     (wait_event_interruptible(read_waitq, asee_buf_count > 0));
     int is_control_c = 0;
@@ -276,7 +268,6 @@ static int device_release(struct inode *inode, struct file *file)
 
  static ssize_t device_write(struct file *filp, const char __user *buff, size_t len, loff_t *off) {
 
-    
     wait_event_interruptible(write_waitq, asee_buf_size > asee_buf_count);
     int is_control_c = 0;
     is_control_c = controlCcheck();
